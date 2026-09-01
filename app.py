@@ -15,12 +15,15 @@ def init_gspread():
     creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
     return gspread.authorize(creds)
 
+# ดึงข้อมูลจาก Google Sheet
+sh = None
 try:
     gc = init_gspread()
     sh = gc.open("Nicha Pjv4 phyton")
     st.sidebar.success("🟢 เชื่อมต่อ Google Sheet เรียบร้อย")
 except Exception as e:
-    st.sidebar.error("🔴 รอการตั้งค่า Secrets ความปลอดภัย")
+    st.sidebar.error("🔴 พบข้อผิดพลาดในการเชื่อมต่อ")
+    st.error(f"⚠️ รายละเอียดข้อผิดพลาด: {e}")
 
 # เมนูเลือกหน้า
 menu = st.sidebar.radio("เลือกเมนูการใช้งาน", ["📊 Dashboard สรุปรายเดือน", "📝 ฟอร์มบันทึกงาน (Admin)"])
@@ -49,9 +52,12 @@ elif menu == "📝 ฟอร์มบันทึกงาน (Admin)":
         
         submitted = st.form_submit_button("💾 บันทึกข้อมูลเข้า Google Sheet")
         if submitted:
-            try:
-                ws = sh.worksheet("บันทึกงาน")
-                ws.append_row([str(date_input), "", "", emp_name, branch, service])
-                st.success("✅ บันทึกข้อมูลเรียบร้อยแล้ว!")
-            except Exception as ex:
-                st.error("กรุณาเปิดสิทธิ์และตั้งค่า Secrets ก่อนใช้งาน")
+            if sh is not None:
+                try:
+                    ws = sh.worksheet("บันทึกงาน")
+                    ws.append_row([str(date_input), "", "", emp_name, branch, service])
+                    st.success("✅ บันทึกข้อมูลเรียบร้อยแล้ว!")
+                except Exception as ex:
+                    st.error(f"เกิดข้อผิดพลาดในการบันทึก: {ex}")
+            else:
+                st.error("ไม่สามารถบันทึกได้ เนื่องจากยังเชื่อมต่อ Google Sheet ไม่สำเร็จ")
