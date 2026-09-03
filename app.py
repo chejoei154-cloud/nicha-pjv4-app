@@ -3,7 +3,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 
-# ตั้งค่าหน้าตา Web App
+# ตั้งค่าหน้าตา Web App ให้กว้างเต็มจอ
 st.set_page_config(
     page_title="Nicha Pjv4 Dashboard", 
     layout="wide", 
@@ -39,61 +39,82 @@ if menu == "📊 Dashboard สรุปรายเดือน":
     
     if sh is not None:
         try:
-            # ดึงข้อมูลจากแท็บ "คำนวณ" ทั้งหมดแบบ Raw Data (ไม่ใช้ Header ป้องกันชื่อซ้ำ)
+            # 1. ดึงข้อมูลตัวเลขที่คำนวณผ่านใน Google Sheet มาก่อน
+            ws_sum = sh.worksheet("สรุปรายเดือน")
+            val_total = ws_sum.acell("A4").value or "0.00"
+            val_shop = ws_sum.acell("D4").value or "0.00"
+            val_owner = ws_sum.acell("G4").value or "0.00"
+            val_agency = ws_sum.acell("A8").value or "0.00"
+
+            # 2. ดึงข้อมูลตารางบันทึกงานเพื่อนำมาคำนวณยอดที่ติด #N/A แบบสดๆ ด้วย Python
             ws_calc = sh.worksheet("คำนวณ")
             raw_data = ws_calc.get_all_values()
-            
+
+            total_admin = 0.0
+            emp_set = set()
+            total_rounds = 0
+
             if len(raw_data) > 1:
-                # สร้าง DataFrame โดยตั้งชื่อคอลัมน์เป็นตัวเลขป้องกัน Duplicate
-                df_calc = pd.DataFrame(raw_data[1:])
-                
-                # ฟังก์ชันล้างตัวเลข
-                def clean_num(val):
-                    try:
-                        val_str = str(val).replace(',', '').replace('฿', '').strip()
-                        return float(val_str) if val_str else 0.0
-                    except:
-                        return 0.0
+                headers = raw_data[0]
+                rows = raw_data[1:]
+                total_rounds = len(rows)
 
-                # คำนวณสรุปยอดเบื้องต้น
-                rounds_count = len(df_calc)
-                
-                # แสดงผลการคำนวณ (ดึงยอดจากหน้าสรุป หรือ คำนวณดิบ)
-                # ดึงค่าตรงจากแท็บ "สรุปรายเดือน" เฉพาะตัวเลขที่แสดงได้
-                ws_sum = sh.worksheet("สรุปรายเดือน")
-                val_total = ws_sum.acell("A4").value or "0.00"
-                val_shop = ws_sum.acell("D4").value or "0.00"
-                val_owner = ws_sum.acell("G4").value or "0.00"
-                val_admin = ws_sum.acell("J4").value or "0.00"
-                val_agency = ws_sum.acell("A8").value or "0.00"
-                val_emp = ws_sum.acell("G8").value or "0"
-                val_avg = ws_sum.acell("J8").value or "0.00"
+                # ค้นหาตำแหน่ง Index ของคอลัมน์สำคัญ ป้องกันปัญหา Duplicate Column Names
+                admin_col_idx = -1
+                emp_col_idx = -1
 
-                # แถวที่ 1
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("💰 รายได้รวมทั้งหมด", f"{val_total} THB" if "THB" not in str(val_total) else val_total)
-                c2.metric("🏠 รายได้ร้าน", f"{val_shop} THB" if "THB" not in str(val_shop) else val_shop)
-                c3.metric("👑 รายได้ Owner", f"{val_owner} THB" if "THB" not in str(val_owner) else val_owner)
-                c4.metric("👔 รายได้ Admin", f"{val_admin} THB" if "THB" not in str(val_admin) else val_admin)
+                for idx, h in enumerate(headers):
+                    h_clean = str(h).strip().lower()
+                    if "ส่วนแบ่ง admin" in h_clean or "ส่วนแบ่งadmin" in h_clean:
+                        admin_col_idx = idx
+                    if "พนักงาน" in h_clean or "ชื่อพนักงาน" in h_clean or "empid" in h_clean:
+                        if emp_col_idx == -1: # เอาคอลัมน์แรกที่เจอ
+                            emp_col_idx = idx
 
-                st.markdown("---")
+                # คำนวณรายได้ Admin และนับจำนวนพนักงาน
+                for r in rows:
+                    if admin_col_idx != -1 and len(r) > admin_col_idx:
+                        try:
+                            val_str = str(r[admin_col_idx]).replace(',', '').replace('฿', '').strip()
+                            total_admin += float(val_str) if val_str else 0.0
+                        except:
+                            pass
+                    
+                    if emp_col_idx != -1 and len(r) > emp_col_idx:
+                        emp_name = str(r[emp_col_idx]).strip()
+                        if emp_name and emp_name.lower() != 'none':
+                            emp_set.add(emp_name)
 
-                # แถวที่ 2
-                c5, c6, c7, c8 = st.columns(4)
-                c5.metric("🤝 รายได้เอเจนซี่", f"{val_agency} THB" if "THB" not in str(val_agency) else val_agency)
-                c6.metric("🔄 จำนวนรอบ", f"{rounds_count} รอบ")
-                c7.metric("👥 จำนวนพนักงาน", f"{val_emp} คน")
-                c8.metric("📊 รายได้เฉลี่ย/รอบ", f"{val_avg} THB" if "THB" not in str(val_avg) else val_avg)
+            # คำนวณรายได้เฉลี่ยต่อรอบ (นำรายได้รวมมาหารจำนวนรอบ)
+            try:
+                tot_num = float(str(val_total).replace(',', '').replace('฿', '').strip())
+                avg_num = tot_num / total_rounds if total_rounds > 0 else 0.0
+            except:
+                avg_num = 0.0
 
-                st.markdown("---")
-                st.subheader("📋 ตารางข้อมูลบันทึกงานทั้งหมด")
-                
-                # แสดงตารางแบบใช้แถวแรกเป็นหัวข้ออย่างปลอดภัย
-                df_display = pd.DataFrame(raw_data[1:], columns=raw_data[0])
-                st.dataframe(df_display, use_container_width=True)
+            # 3. แสดงผลตัวเลขทั้งหมดบน Metric Cards
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("💰 รายได้รวมทั้งหมด", f"{val_total} THB" if "THB" not in str(val_total) else val_total)
+            c2.metric("🏠 รายได้ร้าน", f"{val_shop} THB" if "THB" not in str(val_shop) else val_shop)
+            c3.metric("👑 รายได้ Owner", f"{val_owner} THB" if "THB" not in str(val_owner) else val_owner)
+            c4.metric("👔 รายได้ Admin", f"฿{total_admin:,.2f} THB")
 
-            else:
-                st.warning("ไม่พบข้อมูลในแท็บ 'คำนวณ'")
+            st.markdown("---")
+
+            c5, c6, c7, c8 = st.columns(4)
+            c5.metric("🤝 รายได้เอเจนซี่", f"{val_agency} THB" if "THB" not in str(val_agency) else val_agency)
+            c6.metric("🔄 จำนวนรอบ", f"{total_rounds} รอบ")
+            c7.metric("👥 จำนวนพนักงาน", f"{len(emp_set)} คน")
+            c8.metric("📊 รายได้เฉลี่ย/รอบ", f"฿{avg_num:,.2f} THB")
+
+            st.markdown("---")
+            st.subheader("📋 ตารางข้อมูลบันทึกงานทั้งหมด")
+
+            # แสดงตารางแบบปลอดภัยเพื่อไม่ให้ติด Duplicate column names
+            df_display = pd.DataFrame(raw_data[1:])
+            # ตั้งชื่อหัวคอลัมน์ชั่วคราวเพื่อหลีกเลี่ยงชื่อซ้ำ
+            df_display.columns = [f"{h} ({i+1})" if raw_data[0].count(h) > 1 else h for i, h in enumerate(raw_data[0])]
+            st.dataframe(df_display, use_container_width=True)
 
         except Exception as ex:
             st.error(f"เกิดข้อผิดพลาดในการประมวลผลข้อมูล: {ex}")
