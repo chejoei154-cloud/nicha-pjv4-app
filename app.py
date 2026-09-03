@@ -3,7 +3,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 
-# 1. ตั้งค่าหน้าตา Web App ให้กว้างเต็มจอ (layout="wide")
+# ตั้งค่าหน้าตา Web App
 st.set_page_config(
     page_title="Nicha Pjv4 Dashboard", 
     layout="wide", 
@@ -29,7 +29,6 @@ except Exception as e:
     st.sidebar.error("🔴 พบข้อผิดพลาดในการเชื่อมต่อ")
     st.error(f"⚠️ รายละเอียดข้อผิดพลาด: {e}")
 
-# เมนูเลือกหน้า
 menu = st.sidebar.radio("เลือกเมนูการใช้งาน", ["📊 Dashboard สรุปรายเดือน", "📝 ฟอร์มบันทึกงาน (Admin)"])
 
 # -------------------------------------------------------------
@@ -40,57 +39,67 @@ if menu == "📊 Dashboard สรุปรายเดือน":
     
     if sh is not None:
         try:
-            # ดึงข้อมูลจาก Sheet "บันทึกงาน"
-            ws_job = sh.worksheet("บันทึกงาน")
-            data_job = ws_job.get_all_records()
-            df_job = pd.DataFrame(data_job)
-
-            # คำนวณตัวเลขอัตโนมัติจาก Google Sheet (ปรับแปลงเป็นตัวเลข)
-            total_income = 0
-            shop_income = 0
-            owner_income = 0
-            admin_income = 0
-
-            # ตัวอย่างการคำนวณถ้าระบุคอลัมน์ไว้ (เช่น 'รายได้รวม', 'รายได้ร้าน')
-            if not df_job.empty:
-                # แปลงค่าในคอลัมน์เป็นตัวเลข (ป้องกันการติด string/เครื่องหมายคอมม่า)
-                for col in df_job.columns:
-                    df_job[col] = pd.to_numeric(df_job[col].astype(str).str.replace(',', ''), errors='ignore')
+            # ดึงข้อมูลจากแท็บ "คำนวณ"
+            ws_calc = sh.worksheet("คำนวณ")
+            data_calc = ws_calc.get_all_values()
+            
+            if len(data_calc) > 1:
+                # แปลงเป็น DataFrame และดึงเฉพาะคอลัมน์ A ถึง AD (30 คอลัมน์แรก)
+                df_calc = pd.DataFrame(data_calc[1:], columns=data_calc[0])
+                df_calc = df_calc.iloc[:, :30] 
                 
-                # รวมยอดถ้ามีคอลัมน์ที่ตรงกัน
-                if "รายได้รวม" in df_job.columns:
-                    total_income = df_job["รายได้รวม"].sum()
-                if "รายได้ร้าน" in df_job.columns:
-                    shop_income = df_job["รายได้ร้าน"].sum()
-                if "รายได้ Owner" in df_job.columns:
-                    owner_income = df_job["รายได้ Owner"].sum()
-                if "รายได้ Admin" in df_job.columns:
-                    admin_income = df_job["รายได้ Admin"].sum()
+                # ทำความสะอาดข้อมูลตัวเลข (ตัดเครื่องหมาย , หรือตัวอักษรรวมถึงช่องว่าง)
+                def clean_num(val):
+                    try:
+                        val_str = str(val).replace(',', '').replace('฿', '').strip()
+                        return float(val_str) if val_str else 0.0
+                    except:
+                        return 0.0
 
-            # แสดงผลการคำนวณจริง
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric(label="💰 รายได้รวมทั้งหมด", value=f"{total_income:,.2f} THB")
-            with col2:
-                st.metric(label="🏠 รายได้ร้าน", value=f"{shop_income:,.2f} THB")
-            with col3:
-                st.metric(label="👑 รายได้ Owner", value=f"{owner_income:,.2f} THB")
-            with col4:
-                st.metric(label="👔 รายได้ Admin", value=f"{admin_income:,.2f} THB")
+                # ฟังก์ชันช่วยรวมยอดตามชื่อคอลัมน์
+                def get_sum(col_keyword):
+                    matched_cols = [c for c in df_calc.columns if col_keyword.lower() in str(c).lower()]
+                    if matched_cols:
+                        return df_calc[matched_cols[0]].apply(clean_num).sum()
+                    return 0.0
 
-            st.markdown("---")
-            st.subheader("📋 ตารางข้อมูลบันทึกงานล่าสุด")
-            st.dataframe(df_job, use_container_width=True)
+                # คำนวณยอดต่างๆ จากตารางคำนวณอัตโนมัติ
+                total_inc = get_sum("รวม") or get_sum("ทั้งหมด")
+                shop_inc  = get_sum("ร้าน")
+                owner_inc = get_sum("owner")
+                admin_inc = get_sum("แอดมิน") or get_sum("admin")
+                agency_inc = get_sum("เอเจนซี่") or get_sum("agency")
+                
+                # คำนวณรอบและจำนวนพนักงาน
+                rounds_count = len(df_calc)
+                emp_count = df_calc['ชื่อพนักงาน'].nunique() if 'ชื่อพนักงาน' in df_calc.columns else 0
+                avg_inc = total_inc / rounds_count if rounds_count > 0 else 0
+
+                # แสดงผลการคำนวณ แถวที่ 1
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("💰 รายได้รวมทั้งหมด", f"{total_inc:,.2f} THB")
+                c2.metric("🏠 รายได้ร้าน", f"{shop_inc:,.2f} THB")
+                c3.metric("👑 รายได้ Owner", f"{owner_inc:,.2f} THB")
+                c4.metric("👔 รายได้ Admin", f"{admin_inc:,.2f} THB")
+
+                st.markdown("---")
+
+                # แสดงผลการคำนวณ แถวที่ 2
+                c5, c6, c7, c8 = st.columns(4)
+                c5.metric("🤝 รายได้เอเจนซี่", f"{agency_inc:,.2f} THB")
+                c6.metric("🔄 จำนวนรอบ", f"{rounds_count:,} รอบ")
+                c7.metric("👥 จำนวนพนักงาน", f"{emp_count:,} คน")
+                c8.metric("📊 รายได้เฉลี่ย/รอบ", f"{avg_inc:,.2f} THB")
+
+                st.markdown("---")
+                st.subheader("📋 ตารางข้อมูลจากชีทคำนวณ (คอลัมน์ A - AD)")
+                st.dataframe(df_calc, use_container_width=True)
+
+            else:
+                st.warning("ไม่พบข้อมูลในแท็บ 'คำนวณ'")
 
         except Exception as ex:
-            st.warning(f"ดึงข้อมูลสำเร็จ แต่ปรับรูปแบบตารางไม่ได้: {ex}")
-            st.info("กำลังใช้ตัวเลข Mockup แสดงผลชั่วคราว:")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            with col1: st.metric(label="💰 รายได้รวมทั้งหมด", value="22,700 THB")
-            with col2: st.metric(label="🏠 รายได้ร้าน", value="22,575 THB")
-            with col3: st.metric(label="👑 รายได้ Owner", value="17,724.28 THB")
-            with col4: st.metric(label="👔 รายได้ Admin", value="คำนวณอัตโนมัติ")
+            st.error(f"เกิดข้อผิดพลาดในการประมวลผลข้อมูล: {ex}")
 
 # -------------------------------------------------------------
 # หน้าที่ 2: ฟอร์มบันทึกงาน (Admin)
