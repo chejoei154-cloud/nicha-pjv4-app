@@ -18,13 +18,19 @@ st.set_page_config(
 @st.cache_resource
 def init_connection():
     try:
-        # ดึง Credentials จาก Streamlit Secrets
+        # ดึง Credentials จาก Streamlit Secrets และแปลงรูปแบบ private_key ให้ถูกต้อง
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        if "private_key" in creds_dict:
+            # แก้ไขเรื่อง \n และจัดฟอร์แมต private key ให้เป็นสเปกมาตรฐานของ PEM
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+
         scope = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
+        
         creds = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
+            creds_dict,
             scopes=scope
         )
         client = gspread.authorize(creds)
