@@ -270,7 +270,6 @@ elif menu == "🟢 บันทึกงานประจำวัน (Admin)":
 
         except Exception as ex:
             st.error(f"เกิดข้อผิดพลาดในการบันทึกงาน: {ex}")
-
 # -------------------------------------------------------------
 # 4. หน้าสำหรับ OWNER (จัดการ 3 ฟอร์มหลัก)
 # -------------------------------------------------------------
@@ -278,23 +277,24 @@ elif menu == "👑 [Owner Only] จัดการตั้งค่า & ค่
     st.header("👑 [Owner Only] ระบบจัดการข้อมูลตั้งค่า & อัตราค่าบริการ")
 
     tab_form1, tab_form2, tab_form3 = st.tabs([
-        "1️⃣ ลงทะเบียนสาขา & แอดมิน (คอลัมน์ A-F)", 
+        "1️⃣ ลงทะเบียนสาขา & แอดมิน (แท็บ: สาขาบวกแอดมิน)", 
         "2️⃣ ปรับเปลี่ยนราคาค่าบริการ (เขียนทับ)", 
         "3️⃣ บันทึกรายการค่าใช้จ่าย (คอลัมน์ A-B)"
     ])
 
     # ---------------------------------------------------------
-    # ฟอร์มที่ 1: ลงทะเบียนสาขา + แอดมิน
+    # ฟอร์มที่ 1: ลงทะเบียนสาขา + แอดมิน (ดึง/ลงข้อมูลแท็บ "สาขาบวกแอดมิน")
     # ---------------------------------------------------------
     with tab_form1:
-        st.subheader("1️⃣ ฟอร์มลงทะเบียนสาขา & แอดมิน (คอลัมน์ A-F)")
+        st.subheader("1️⃣ ฟอร์มลงทะเบียนสาขา & แอดมิน (บันทึกลงแท็บ 'สาขาบวกแอดมิน')")
         if sh is not None:
             try:
-                ws_set = get_or_create_worksheet(
-                    ["ข้อมูลตั้งค่า", "มูลตั้งค่า", "สาขา"], 
+                # แก้ไขชื่อแท็บเป้าหมายเป็น "สาขาบวกแอดมิน"
+                ws_branch = get_or_create_worksheet(
+                    ["สาขาบวกแอดมิน", "สาขา+แอดมิน", "สาขา แอดมิน"], 
                     ["สาขา", "แอดมิน", "รายชื่อเอเจนซี่", "จำนวนวันทำงาน", "สถานะระบบ", "สถานะจ่าย"]
                 )
-                set_vals = ws_set.get_all_values()
+                branch_vals = ws_branch.get_all_values()
 
                 with st.form("form_owner_1"):
                     col_a, col_b, col_c = st.columns(3)
@@ -308,22 +308,22 @@ elif menu == "👑 [Owner Only] จัดการตั้งค่า & ค่
                         val_sys_status = st.selectbox("⚙️ สถานะระบบ (Col E)", ["ใช้งานปกติ", "ปิดปรับปรุง", "ระงับ"])
                         val_pay_status = st.selectbox("💳 สถานะจ่ายเอเจนซี่ (Col F)", ["จ่ายแล้ว", "รอจ่าย", "ค้างชำระ"])
 
-                    submit_f1 = st.form_submit_button("💾 บันทึกข้อมูล คอลัมน์ A-F ลง Google Sheet", use_container_width=True)
+                    submit_f1 = st.form_submit_button("💾 บันทึกข้อมูลลงแท็บ 'สาขาบวกแอดมิน'", use_container_width=True)
 
                     if submit_f1:
                         new_row_f1 = [
                             val_branch or "-", val_admin or "-", val_agency or "-",
                             val_workdays or "-", val_sys_status, val_pay_status
                         ]
-                        ws_set.append_row(new_row_f1)
-                        st.success("✅ บันทึกข้อมูลคอลัมน์ A-F เรียบร้อยแล้ว!")
+                        ws_branch.append_row(new_row_f1)
+                        st.success(f"✅ บันทึกข้อมูลลงแท็บ '{ws_branch.title}' เรียบร้อยแล้ว!")
                         st.rerun()
 
                 st.markdown("---")
-                st.write(f"📋 **ตารางข้อมูลตั้งค่าปัจจุบัน (แท็บ: {ws_set.title})**")
-                if len(set_vals) > 0:
-                    df_set = pd.DataFrame(set_vals[1:], columns=set_vals[0]) if len(set_vals) > 1 else pd.DataFrame(set_vals)
-                    st.dataframe(df_set, use_container_width=True)
+                st.write(f"📋 **ตารางข้อมูลสาขา & แอดมินปัจจุบัน (แท็บ: {ws_branch.title})**")
+                if len(branch_vals) > 0:
+                    df_branch = pd.DataFrame(branch_vals[1:], columns=branch_vals[0]) if len(branch_vals) > 1 else pd.DataFrame(branch_vals)
+                    st.dataframe(df_branch, use_container_width=True)
 
             except Exception as ex:
                 st.error(f"เกิดข้อผิดพลาดในฟอร์มที่ 1: {ex}")
@@ -386,13 +386,14 @@ elif menu == "👑 [Owner Only] จัดการตั้งค่า & ค่
                 st.error(f"เกิดข้อผิดพลาดในฟอร์มที่ 2: {ex}")
 
     # ---------------------------------------------------------
-    # ฟอร์มที่ 3: บันทึกค่าใช้จ่าย (ลงคอลัมน์ A และ B)
+    # ฟอร์มที่ 3: บันทึกค่าใช้จ่าย (ลงคอลัมน์ A และ B แท็บ ข้อมูลตั้งค่า)
     # ---------------------------------------------------------
     with tab_form3:
-        st.subheader("3️⃣ ฟอร์มบันทึกรายการค่าใช้จ่าย (คอลัมน์ A และ B)")
+        st.subheader("3️⃣ ฟอร์มบันทึกรายการค่าใช้จ่าย (แท็บ 'ข้อมูลตั้งค่า' คอลัมน์ A และ B)")
         if sh is not None:
             try:
-                ws_set = get_or_create_worksheet(["ข้อมูลตั้งค่า", "มูลตั้งค่า", "สาขา"])
+                # ฟอร์มนี้ใช้แท็บ "ข้อมูลตั้งค่า" หรือ "มูลตั้งค่า"
+                ws_set = get_or_create_worksheet(["ข้อมูลตั้งค่า", "มูลตั้งค่า"])
 
                 with st.form("form_owner_3"):
                     col_e1, col_e2 = st.columns(2)
@@ -413,3 +414,5 @@ elif menu == "👑 [Owner Only] จัดการตั้งค่า & ค่
 
             except Exception as ex:
                 st.error(f"เกิดข้อผิดพลาดในฟอร์มที่ 3: {ex}")
+
+
