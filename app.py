@@ -282,7 +282,7 @@ elif menu == "👑 [Owner Only] จัดการตั้งค่า & ค่
         "3️⃣ บันทึกรายการค่าใช้จ่าย (คอลัมน์ A-B)"
     ])
     # ---------------------------------------------------------
-    # ฟอร์มที่ 1: ข้อมูลเบื้องต้น (แก้ไขข้อมูล Row 1 / แสดงตาราง Col A-F)
+    # ฟอร์มที่ 1: ข้อมูลเบื้องต้น (เพิ่ม/แก้ไขข้อมูลตามชื่อหัวข้อ Row 1 Col A-F)
     # ---------------------------------------------------------
     with tab_form1:
         st.subheader("1️⃣ ข้อมูลเบื้องต้น")
@@ -291,64 +291,99 @@ elif menu == "👑 [Owner Only] จัดการตั้งค่า & ค่
                 # เชื่อมต่อแท็บ "ข้อมูลเบื้องต้น"
                 ws_info = get_or_create_worksheet(
                     ["ข้อมูลเบื้องต้น"], 
-                    ["คอลัมน์ A", "คอลัมน์ B", "คอลัมน์ C", "คอลัมน์ D", "คอลัมน์ E", "คอลัมน์ F"]
+                    ["สาขา", "ชื่อแอดมิน", "เปอร์เซ็นต์ส่วนแบ่งค่ารอบ", "เปอร์เซ็นต์ค่าโปรโมท", "เปอร์เซ็นต์ส่วนแบ่งเงิน agency", "ชื่อ agency"]
                 )
                 
                 # ดึงข้อมูลทั้งหมดในชีท
                 all_vals = ws_info.get_all_values()
                 
-                # ดึงข้อมูลแถวที่ 1 (Row 1) สำหรับ Col A-F มาตั้งเป็นค่าเริ่มต้นในฟอร์ม
-                row1_data = all_vals[0] if len(all_vals) > 0 else []
-                def get_row1_val(col_idx):
-                    return str(row1_data[col_idx]).strip() if len(row1_data) > col_idx else ""
+                # ดึงชื่อคอลัมน์ A-F จาก แถวที่ 1 (Row 1)
+                headers = all_vals[0] if len(all_vals) > 0 else []
+                def get_header(col_idx, default_name):
+                    if len(headers) > col_idx and headers[col_idx].strip():
+                        return headers[col_idx].strip()
+                    return default_name
 
-                val_a_init = get_row1_val(0)
-                val_b_init = get_row1_val(1)
-                val_c_init = get_row1_val(2)
-                val_d_init = get_row1_val(3)
-                val_e_init = get_row1_val(4)
-                val_f_init = get_row1_val(5)
+                label_a = get_header(0, "สาขา")
+                label_b = get_header(1, "ชื่อแอดมิน")
+                label_c = get_header(2, "เปอร์เซ็นต์ส่วนแบ่งค่ารอบ")
+                label_d = get_header(3, "เปอร์เซ็นต์ค่าโปรโมท")
+                label_e = get_header(4, "เปอร์เซ็นต์ส่วนแบ่งเงิน agency")
+                label_f = get_header(5, "ชื่อ agency")
+
+                # ระบบเลือกโหมด: เพิ่มรายการใหม่ หรือ แก้ไขแถวเดิม
+                st.write("📝 **กรอกข้อมูลเบื้องต้น**")
+                
+                mode = st.radio("เลือกรูปแบบการบันทึก:", ["➕ เพิ่มข้อมูลใหม่ (ต่อแถวล่างสุด)", "✏️ แก้ไข/ปรับปรุงข้อมูลเดิม"], horizontal=True)
+                
+                row_to_edit = None
+                default_a, default_b, default_c, default_d, default_e, default_f = "", "", "", "", "", ""
+
+                # ถ้าเลือกโหมดแก้ไข ให้มี Dropdown ดึงรายการมาให้เลือก
+                if mode == "✏️ แก้ไข/ปรับปรุงข้อมูลเดิม" and len(all_vals) > 1:
+                    row_options = [f"แถวที่ {idx+1}: {row[0] if len(row)>0 else ''} - {row[1] if len(row)>1 else ''}" for idx, row in enumerate(all_vals[1:], start=1)]
+                    selected_option = st.selectbox("🎯 เลือกแถวที่ต้องการแก้ไขข้อมูล:", row_options)
+                    
+                    # หาเลขแถวใน Google Sheets (index + 1)
+                    row_to_edit = int(selected_option.split(":")[0].replace("แถวที่ ", ""))
+                    target_row_data = all_vals[row_to_edit - 1]
+
+                    default_a = target_row_data[0] if len(target_row_data) > 0 else ""
+                    default_b = target_row_data[1] if len(target_row_data) > 1 else ""
+                    default_c = target_row_data[2] if len(target_row_data) > 2 else ""
+                    default_d = target_row_data[3] if len(target_row_data) > 3 else ""
+                    default_e = target_row_data[4] if len(target_row_data) > 4 else ""
+                    default_f = target_row_data[5] if len(target_row_data) > 5 else ""
 
                 with st.form("form_owner_1"):
-                    st.write("📝 **กรอก/แก้ไขข้อมูลเบื้องต้น (แถวที่ 1 คอลัมน์ A - F)**")
                     col1, col2, col3 = st.columns(3)
                     
                     with col1:
-                        val_a = st.text_input("คอลัมน์ A", value=val_a_init)
-                        val_b = st.text_input("คอลัมน์ B", value=val_b_init)
+                        val_a = st.text_input(f"📌 {label_a}", value=default_a)
+                        val_b = st.text_input(f"📌 {label_b}", value=default_b)
                     with col2:
-                        val_c = st.text_input("คอลัมน์ C", value=val_c_init)
-                        val_d = st.text_input("คอลัมน์ D", value=val_d_init)
+                        val_c = st.text_input(f"📌 {label_c}", value=default_c)
+                        val_d = st.text_input(f"📌 {label_d}", value=default_d)
                     with col3:
-                        val_e = st.text_input("คอลัมน์ E", value=val_e_init)
-                        val_f = st.text_input("คอลัมน์ F", value=val_f_init)
+                        val_e = st.text_input(f"📌 {label_e}", value=default_e)
+                        val_f = st.text_input(f"📌 {label_f}", value=default_f)
 
-                    submit_f1 = st.form_submit_button("💾 บันทึกข้อมูลเบื้องต้น (เขียนทับแถวที่ 1)", use_container_width=True)
+                    btn_label = "💾 บันทึกทับแถวที่เลือก" if mode == "✏️ แก้ไข/ปรับปรุงข้อมูลเดิม" else "➕ บันทึกเพิ่มข้อมูลต่อแถวล่างสุด"
+                    submit_f1 = st.form_submit_button(btn_label, use_container_width=True)
 
                     if submit_f1:
-                        # อัปเดตข้อมูลเขียนทับช่วง A1:F1
-                        ws_info.update("A1:F1", [[val_a, val_b, val_c, val_d, val_e, val_f]])
-                        st.success("✅ บันทึกข้อมูลเบื้องต้นลงแถวที่ 1 (คอลัมน์ A-F) เรียบร้อยแล้ว!")
+                        new_data = [val_a, val_b, val_c, val_d, val_e, val_f]
+                        
+                        if mode == "✏️ แก้ไข/ปรับปรุงข้อมูลเดิม" and row_to_edit:
+                            # แก้ไขทับแถวเดิมช่วง Col A ถึง F
+                            range_to_update = f"A{row_to_edit}:F{row_to_edit}"
+                            ws_info.update(range_to_update, [new_data])
+                            st.success(f"✅ แก้ไขและบันทึกทับข้อมูลใน {range_to_update} เรียบร้อยแล้ว!")
+                        else:
+                            # เพิ่มข้อมูลใหม่ต่อแถวล่างสุด
+                            ws_info.append_row(new_data)
+                            st.success("✅ บันทึกเพิ่มข้อมูลใหม่ต่อแถวล่างสุดเรียบร้อยแล้ว!")
+                        
                         st.rerun()
 
                 st.markdown("---")
-                st.subheader(f"📋 ตารางข้อมูลทั้งหมด (แท็บ: {ws_info.title} - คอลัมน์ A ถึง F เท่านั้น)")
+                st.subheader(f"📋 ตารางข้อมูลเบื้องต้นทั้งหมด (แท็บ: {ws_info.title} - แสดง คอลัมน์ A ถึง F)")
                 
                 if len(all_vals) > 0:
-                    # แปลงข้อมูลให้อยู่ในรูปแบบ DataFrame และตัดเอาเฉพาะคอลัมน์ A ถึง F (index 0 ถึง 5)
+                    # แปลงข้อมูลเป็น DataFrame และตัดแสดงเฉพาะคอลัมน์ A ถึง F
                     df_all = pd.DataFrame(all_vals)
-                    df_a_f = df_all.iloc[:, :6] # กรองเฉพาะ 6 คอลัมน์แรก (A-F)
+                    df_a_f = df_all.iloc[:, :6]
                     
-                    # กำหนดชื่อคอลัมน์ A-F เพื่อความสวยงาม
-                    col_names = ["คอลัมน์ A", "คอลัมน์ B", "คอลัมน์ C", "คอลัมน์ D", "คอลัมน์ E", "คอลัมน์ F"]
-                    df_a_f.columns = col_names[:df_a_f.shape[1]]
+                    # ตั้งชื่อหัวข้อตารางตามแถวที่ 1
+                    df_a_f.columns = [label_a, label_b, label_c, label_d, label_e, label_f][:df_a_f.shape[1]]
                     
-                    st.dataframe(df_a_f, use_container_width=True)
+                    st.dataframe(df_a_f.iloc[1:], use_container_width=True) # แสดงข้อมูลตั้งแต่แถวที่ 2 เป็นต้นไป
                 else:
                     st.info("ยังไม่มีข้อมูลในแท็บ 'ข้อมูลเบื้องต้น'")
 
             except Exception as ex:
                 st.error(f"เกิดข้อผิดพลาดในฟอร์มข้อมูลเบื้องต้น: {ex}")
+
     # ---------------------------------------------------------
     # ฟอร์มที่ 2: ปรับเปลี่ยนราคาค่าบริการ (เขียนทับชีท ค่าบริการ)
     # ---------------------------------------------------------
