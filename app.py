@@ -4,7 +4,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime, date
 
-# ตั้งค่าหน้าตา Web App ให้กว้างเต็มจอ
+# ตั้งค่าหน้าตา Web App
 st.set_page_config(
     page_title="Nicha Pjv4 System", 
     layout="wide", 
@@ -30,6 +30,24 @@ except Exception as e:
     st.sidebar.error("🔴 พบข้อผิดพลาดในการเชื่อมต่อ")
     st.error(f"⚠️ รายละเอียดข้อผิดพลาด: {e}")
 
+# ฟังก์ชันดึง Worksheet แบบการันตี (ถ้าไม่มีแท็บ ให้สร้างให้อัตโนมัติ)
+def get_or_create_worksheet(sheet_names, default_headers=None):
+    if sh is None:
+        return None
+    
+    # ลองหาชื่อแท็บตามรายการที่ส่งมา
+    all_worksheets = [ws.title for ws in sh.worksheets()]
+    for name in sheet_names:
+        if name in all_worksheets:
+            return sh.worksheet(name)
+            
+    # ถ้าหาไม่เจอเลย ให้สร้างแท็บใหม่ด้วยชื่อแรก
+    primary_name = sheet_names[0]
+    new_ws = sh.add_worksheet(title=primary_name, rows=100, cols=20)
+    if default_headers:
+        new_ws.append_row(default_headers)
+    return new_ws
+
 # เมนูหลัก
 menu = st.sidebar.radio(
     "📌 เมนูหลัก", 
@@ -41,22 +59,16 @@ menu = st.sidebar.radio(
     ]
 )
 
-# -------------------------------------------------------------
-# ฟังก์ชันดึงรายการจากแท็บตั้งค่า
-# -------------------------------------------------------------
-def get_setting_list(worksheet_name, col_name_keyword, default_list):
-    if sh is not None:
+# ฟังก์ชันดึงรายการไปใส่ Dropdown
+def get_setting_list(possible_sheets, col_idx=0, default_list=[]):
+    ws = get_or_create_worksheet(possible_sheets)
+    if ws:
         try:
-            ws = sh.worksheet(worksheet_name)
             data = ws.get_all_values()
             if len(data) > 1:
-                df = pd.DataFrame(data[1:], columns=data[0])
-                matched_cols = [c for c in df.columns if col_name_keyword.lower() in str(c).lower()]
-                if matched_cols:
-                    items = df[matched_cols[0]].dropna().unique().tolist()
-                    clean_items = [str(x).strip() for x in items if str(x).strip() != ""]
-                    if clean_items:
-                        return clean_items
+                items = [row[col_idx].strip() for row in data[1:] if len(row) > col_idx and row[col_idx].strip() != ""]
+                if items:
+                    return list(dict.fromkeys(items)) # ลบตัวซ้ำ
         except:
             pass
     return default_list
@@ -68,14 +80,14 @@ if menu == "📊 Dashboard สรุปรายเดือน":
     st.header("📈 สรุปผลภาพรวมประจำเดือน")
     if sh is not None:
         try:
-            ws_sum = sh.worksheet("สรุปรายเดือน")
-            val_total = ws_sum.acell("A4").value or "0.00"
-            val_shop = ws_sum.acell("D4").value or "0.00"
-            val_owner = ws_sum.acell("G4").value or "0.00"
-            val_agency = ws_sum.acell("A8").value or "0.00"
+            ws_sum = get_or_create_worksheet(["สรุปรายเดือน"])
+            val_total = ws_sum.acell("A4").value or "0.00" if ws_sum else "0.00"
+            val_shop = ws_sum.acell("D4").value or "0.00" if ws_sum else "0.00"
+            val_owner = ws_sum.acell("G4").value or "0.00" if ws_sum else "0.00"
+            val_agency = ws_sum.acell("A8").value or "0.00" if ws_sum else "0.00"
 
-            ws_calc = sh.worksheet("คำนวณ")
-            raw_data = ws_calc.get_all_values()
+            ws_calc = get_or_create_worksheet(["คำนวณ"])
+            raw_data = ws_calc.get_all_values() if ws_calc else []
 
             total_admin = 0.0
             emp_set = set()
@@ -132,29 +144,29 @@ if menu == "📊 Dashboard สรุปรายเดือน":
 
             st.markdown("---")
             st.subheader("📋 ตารางข้อมูลคำนวณทั้งหมด")
-            df_display = pd.DataFrame(raw_data[1:])
-            df_display.columns = [f"{h} ({i+1})" if raw_data[0].count(h) > 1 else h for i, h in enumerate(raw_data[0])]
-            st.dataframe(df_display, use_container_width=True)
+            if len(raw_data) > 1:
+                df_display = pd.DataFrame(raw_data[1:])
+                df_display.columns = [f"{h} ({i+1})" if raw_data[0].count(h) > 1 else h for i, h in enumerate(raw_data[0])]
+                st.dataframe(df_display, use_container_width=True)
 
         except Exception as ex:
             st.error(f"เกิดข้อผิดพลาดในการประมวลผลข้อมูล: {ex}")
 
 # -------------------------------------------------------------
-# 2. หน้าลงทะเบียนพนักงานใหม่ (🟢 แท็บพนักงาน)
+# 2. หน้าลงทะเบียนพนักงานใหม่
 # -------------------------------------------------------------
 elif menu == "🟢 ลงทะเบียนพนักงานใหม่":
     st.header("👤 ฟอร์มลงทะเบียนพนักงานใหม่ (แท็บ: พนักงาน)")
-    st.info("💡 ระบบจะรันรหัส EmpID ให้อัตโนมัติ Admin กรอกเพียงข้อมูลที่จำเป็นครับ")
 
     if sh is not None:
         try:
-            ws_emp = sh.worksheet("พนักงาน")
+            ws_emp = get_or_create_worksheet(["พนักงาน"], ["EmpID", "ชื่อ-นามสกุล", "เวลาทำงาน", "ประเภทพนักงาน", "เอเจนซี่", "มัดจำ", "วันมัดจำ", "วันเริ่มงาน", "ค่าโปรโมท", "สถานะ"])
             emp_data = ws_emp.get_all_values()
             
             next_id_num = len(emp_data)
             auto_emp_id = f"EMP{next_id_num:03d}"
 
-            agencies = get_setting_list("มูลตั้งค่า", "เอเจนซี่", ["Agency A", "Agency B", "อื่นๆ"])
+            agencies = get_setting_list(["ข้อมูลตั้งค่า", "มูลตั้งค่า", "สาขา"], col_idx=2, default_list=["Agency A", "Agency B"])
 
             with st.form("emp_reg_form"):
                 col1, col2 = st.columns(2)
@@ -182,10 +194,7 @@ elif menu == "🟢 ลงทะเบียนพนักงานใหม่"
                     start_date = st.date_input("🚀 วันเริ่มงาน", value=date.today())
                     
                     promo_option = st.selectbox("📢 ค่าโปรโมท / ค่าป้าย", ["ไม่มีค่าโปรโมท", "1,000", "2,000"])
-                    status_option = st.selectbox(
-                        "📌 สถานะการทำงาน", 
-                        ["ทำงาน", "รอเริ่มงาน", "จบงาน", "ไม่มาทำงาน"]
-                    )
+                    status_option = st.selectbox("📌 สถานะการทำงาน", ["ทำงาน", "รอเริ่มงาน", "จบงาน", "ไม่มาทำงาน"])
 
                 submit_emp = st.form_submit_button("💾 บันทึกข้อมูลพนักงานเข้า Google Sheet", use_container_width=True)
 
@@ -194,16 +203,9 @@ elif menu == "🟢 ลงทะเบียนพนักงานใหม่"
                         st.error("⚠️ กรุณากรอกชื่อพนักงานก่อนบันทึกครับ")
                     else:
                         new_row = [
-                            auto_emp_id,
-                            emp_name,
-                            time_str,
-                            emp_type,
-                            agency_name,
-                            deposit_option,
-                            str(deposit_date) if deposit_option != "ไม่มีค่ามัดจำ" else "-",
-                            str(start_date),
-                            promo_option,
-                            status_option
+                            auto_emp_id, emp_name, time_str, emp_type, agency_name,
+                            deposit_option, str(deposit_date) if deposit_option != "ไม่มีค่ามัดจำ" else "-",
+                            str(start_date), promo_option, status_option
                         ]
                         ws_emp.append_row(new_row)
                         st.success(f"✅ บันทึกข้อมูล {emp_name} ({auto_emp_id}) เรียบร้อยแล้ว!")
@@ -219,15 +221,15 @@ elif menu == "🟢 ลงทะเบียนพนักงานใหม่"
             st.error(f"เกิดข้อผิดพลาดในการโหลดข้อมูลพนักงาน: {ex}")
 
 # -------------------------------------------------------------
-# 3. หน้าบันทึกงานประจำวัน (🟢 แท็บบันทึกงาน)
+# 3. หน้าบันทึกงานประจำวัน
 # -------------------------------------------------------------
 elif menu == "🟢 บันทึกงานประจำวัน (Admin)":
     st.header("📝 บันทึกงานประจำวัน ( Admin )")
 
     if sh is not None:
         try:
-            ws_emp = sh.worksheet("พนักงาน")
-            emp_rows = ws_emp.get_all_values()
+            ws_emp = get_or_create_worksheet(["พนักงาน"])
+            emp_rows = ws_emp.get_all_values() if ws_emp else []
             
             emp_options = []
             if len(emp_rows) > 1:
@@ -236,11 +238,11 @@ elif menu == "🟢 บันทึกงานประจำวัน (Admin)":
                         emp_options.append(f"{r[0]} - {r[1]}")
             
             if not emp_options:
-                emp_options = ["กรุณาลงทะเบียนพนักงานก่อน"]
+                emp_options = ["ไม่มีข้อมูลพนักงาน"]
 
-            branches = get_setting_list("มูลตั้งค่า", "สาขา", ["ประจวบคีรีขันธ์", "ราชบุรี", "พิษณุโลก"])
-            admins = get_setting_list("มูลตั้งค่า", "แอดมิน", ["Admin 1", "Admin 2"])
-            services = get_setting_list("ค่าบริการ", "บริการ", ["40 นาที", "60 นาที", "90 นาที", "120 นาที", "8 hr (ทั้งคืน)"])
+            branches = get_setting_list(["ข้อมูลตั้งค่า", "มูลตั้งค่า", "สาขา"], col_idx=0, default_list=["ประจวบคีรีขันธ์", "ราชบุรี"])
+            admins = get_setting_list(["ข้อมูลตั้งค่า", "มูลตั้งค่า", "แอดมิน"], col_idx=1, default_list=["Admin 1", "Admin 2"])
+            services = get_setting_list(["ค่าบริการ"], col_idx=0, default_list=["40 นาที", "60 นาที", "90 นาที"])
 
             with st.form("job_form"):
                 col_f1, col_f2 = st.columns(2)
@@ -260,15 +262,9 @@ elif menu == "🟢 บันทึกงานประจำวัน (Admin)":
                     emp_id_val = selected_emp.split(" - ")[0] if " - " in selected_emp else ""
                     emp_name_val = selected_emp.split(" - ")[1] if " - " in selected_emp else selected_emp
 
-                    ws_job = sh.worksheet("บันทึกงาน")
+                    ws_job = get_or_create_worksheet(["บันทึกงาน"], ["วันที่", "Admin", "EmpID", "ชื่อพนักงาน", "สาขา", "บริการ", "สถานะ"])
                     ws_job.append_row([
-                        str(date_input), 
-                        selected_admin, 
-                        emp_id_val, 
-                        emp_name_val, 
-                        branch, 
-                        service, 
-                        job_status
+                        str(date_input), selected_admin, emp_id_val, emp_name_val, branch, service, job_status
                     ])
                     st.success("✅ บันทึกงานเข้าแท็บ 'บันทึกงาน' เรียบร้อยแล้ว!")
 
@@ -288,13 +284,16 @@ elif menu == "👑 [Owner Only] จัดการตั้งค่า & ค่
     ])
 
     # ---------------------------------------------------------
-    # ฟอร์มที่ 1: ลงทะเบียนสาขา + แอดมิน (แท็บ: มูลตั้งค่า คอลัมน์ A ถึง F)
+    # ฟอร์มที่ 1: ลงทะเบียนสาขา + แอดมิน
     # ---------------------------------------------------------
     with tab_form1:
-        st.subheader("1️⃣ ฟอร์มลงทะเบียนสาขา & แอดมิน (บันทึกลงแท็บ 'มูลตั้งค่า' คอลัมน์ A-F)")
+        st.subheader("1️⃣ ฟอร์มลงทะเบียนสาขา & แอดมิน (คอลัมน์ A-F)")
         if sh is not None:
             try:
-                ws_set = sh.worksheet("มูลตั้งค่า")
+                ws_set = get_or_create_worksheet(
+                    ["ข้อมูลตั้งค่า", "มูลตั้งค่า", "สาขา"], 
+                    ["สาขา", "แอดมิน", "รายชื่อเอเจนซี่", "จำนวนวันทำงาน", "สถานะระบบ", "สถานะจ่าย"]
+                )
                 set_vals = ws_set.get_all_values()
 
                 with st.form("form_owner_1"):
@@ -309,23 +308,19 @@ elif menu == "👑 [Owner Only] จัดการตั้งค่า & ค่
                         val_sys_status = st.selectbox("⚙️ สถานะระบบ (Col E)", ["ใช้งานปกติ", "ปิดปรับปรุง", "ระงับ"])
                         val_pay_status = st.selectbox("💳 สถานะจ่ายเอเจนซี่ (Col F)", ["จ่ายแล้ว", "รอจ่าย", "ค้างชำระ"])
 
-                    submit_f1 = st.form_submit_button("💾 บันทึกข้อมูล คอลัมน์ A-F ลงแท็บมูลตั้งค่า", use_container_width=True)
+                    submit_f1 = st.form_submit_button("💾 บันทึกข้อมูล คอลัมน์ A-F ลง Google Sheet", use_container_width=True)
 
                     if submit_f1:
                         new_row_f1 = [
-                            val_branch or "-",
-                            val_admin or "-",
-                            val_agency or "-",
-                            val_workdays or "-",
-                            val_sys_status,
-                            val_pay_status
+                            val_branch or "-", val_admin or "-", val_agency or "-",
+                            val_workdays or "-", val_sys_status, val_pay_status
                         ]
                         ws_set.append_row(new_row_f1)
                         st.success("✅ บันทึกข้อมูลคอลัมน์ A-F เรียบร้อยแล้ว!")
                         st.rerun()
 
                 st.markdown("---")
-                st.write("📋 **ตารางข้อมูลในแท็บ 'มูลตั้งค่า' ปัจจุบัน**")
+                st.write(f"📋 **ตารางข้อมูลตั้งค่าปัจจุบัน (แท็บ: {ws_set.title})**")
                 if len(set_vals) > 0:
                     df_set = pd.DataFrame(set_vals[1:], columns=set_vals[0]) if len(set_vals) > 1 else pd.DataFrame(set_vals)
                     st.dataframe(df_set, use_container_width=True)
@@ -340,21 +335,22 @@ elif menu == "👑 [Owner Only] จัดการตั้งค่า & ค่
         st.subheader("2️⃣ ฟอร์มปรับแต่งราคาค่าบริการ (บันทึกเขียนทับชีท 'ค่าบริการ')")
         if sh is not None:
             try:
-                ws_svc = sh.worksheet("ค่าบริการ")
+                ws_svc = get_or_create_worksheet(
+                    ["ค่าบริการ"], 
+                    ["ชื่อบริการ", "เงินบริการ", "เงินพนักงาน", "เงินร้าน", "เงินเอเจนซี่"]
+                )
                 svc_vals = ws_svc.get_all_values()
 
                 if len(svc_vals) > 1:
                     headers = svc_vals[0]
                     df_svc = pd.DataFrame(svc_vals[1:], columns=headers)
                     
-                    # ค้นหาคอลัมน์บริการ
-                    service_col = headers[0] # สมมติว่าคอลัมน์แรกคือชื่อบริการ
+                    service_col = headers[0]
                     service_names = df_svc[service_col].tolist()
 
                     selected_svc = st.selectbox("⏱️ เลือกชื่อบริการที่ต้องการปรับเปลี่ยนราคา", service_names)
 
-                    # ดึงข้อมูลเดิมของบริการที่เลือกมาโชว์ให้อัตโนมัติ
-                    selected_row_idx = service_names.index(selected_svc) + 2 # +2 เพราะมี Header และ 1-based index ใน Sheets
+                    selected_row_idx = service_names.index(selected_svc) + 2
                     row_data = df_svc[df_svc[service_col] == selected_svc].iloc[0]
 
                     with st.form("form_owner_2"):
@@ -372,7 +368,6 @@ elif menu == "👑 [Owner Only] จัดการตั้งค่า & ค่
                         submit_f2 = st.form_submit_button("🔄 เขียนทับราคาใหม่ลง Google Sheet", use_container_width=True)
 
                         if submit_f2:
-                            # เขียนทับเฉพาะช่วงคอลัมน์ราคาในแถวนั้นๆ
                             ws_svc.update_cell(selected_row_idx, 2, new_price_total)
                             ws_svc.update_cell(selected_row_idx, 3, new_price_emp)
                             ws_svc.update_cell(selected_row_idx, 4, new_price_shop)
@@ -391,13 +386,13 @@ elif menu == "👑 [Owner Only] จัดการตั้งค่า & ค่
                 st.error(f"เกิดข้อผิดพลาดในฟอร์มที่ 2: {ex}")
 
     # ---------------------------------------------------------
-    # ฟอร์มที่ 3: บันทึกค่าใช้จ่าย (แท็บ: มูลตั้งค่า คอลัมน์ A และ B)
+    # ฟอร์มที่ 3: บันทึกค่าใช้จ่าย (ลงคอลัมน์ A และ B)
     # ---------------------------------------------------------
     with tab_form3:
-        st.subheader("3️⃣ ฟอร์มบันทึกรายการค่าใช้จ่าย (ลงแท็บ 'มูลตั้งค่า' คอลัมน์ A และ B)")
+        st.subheader("3️⃣ ฟอร์มบันทึกรายการค่าใช้จ่าย (คอลัมน์ A และ B)")
         if sh is not None:
             try:
-                ws_set = sh.worksheet("มูลตั้งค่า")
+                ws_set = get_or_create_worksheet(["ข้อมูลตั้งค่า", "มูลตั้งค่า", "สาขา"])
 
                 with st.form("form_owner_3"):
                     col_e1, col_e2 = st.columns(2)
@@ -406,14 +401,14 @@ elif menu == "👑 [Owner Only] จัดการตั้งค่า & ค่
                     with col_e2:
                         exp_type = st.selectbox("🏷️ ประเภทค่าใช้จ่าย (Col B)", ["ค่าใช้จ่ายประจำ", "ค่าอุปกรณ์/ซ่อมบำรุง", "ค่าการตลาด/โปรโมท", "ค่าน้ำ/ค่าไฟ", "อื่นๆ"])
 
-                    submit_f3 = st.form_submit_button("💾 บันทึกค่าใช้จ่ายลงแท็บมูลตั้งค่า (Col A-B)", use_container_width=True)
+                    submit_f3 = st.form_submit_button("💾 บันทึกค่าใช้จ่ายลง Google Sheet (Col A-B)", use_container_width=True)
 
                     if submit_f3:
                         if not exp_item:
                             st.error("⚠️ กรุณาระบุรายการค่าใช้จ่ายก่อนบันทึกครับ")
                         else:
                             ws_set.append_row([exp_item, exp_type])
-                            st.success(f"✅ บันทึกรายการ '{exp_item}' ลงคอลัมน์ A-B เรียบร้อยแล้ว!")
+                            st.success(f"✅ บันทึกรายการ '{exp_item}' ลงคอลัมน์ A-B ในแท็บ '{ws_set.title}' เรียบร้อยแล้ว!")
                             st.rerun()
 
             except Exception as ex:
