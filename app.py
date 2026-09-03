@@ -29,12 +29,18 @@ def init_connection():
         )
         client = gspread.authorize(creds)
         
-        # เปิดไฟล์ Google Sheet ตามชื่อหรือ URL ที่ตั้งไว้ใน Secrets
-        sheet_url_or_name = st.secrets.get("spreadsheet_name", "Nicha_Pjv4_Database")
-        if sheet_url_or_name.startswith("http"):
-            spreadsheet = client.open_by_url(sheet_url_or_name)
+        # ดึงค่าเป้าหมายจาก Secrets
+        target_sheet = st.secrets.get("spreadsheet_name", "Nicha_Pjv4_Database")
+        target_sheet_str = str(target_sheet).strip()
+        
+        # ตรวจสอบรูปแบบเพื่อเปิด Google Sheet ให้ถูกต้อง
+        if target_sheet_str.startswith("http"):
+            spreadsheet = client.open_by_url(target_sheet_str)
         else:
-            spreadsheet = client.open(sheet_url_or_name)
+            try:
+                spreadsheet = client.open(target_sheet_str)
+            except Exception:
+                spreadsheet = client.open_by_key(target_sheet_str)
             
         return spreadsheet
     except Exception as e:
@@ -65,7 +71,7 @@ def get_or_create_worksheet(spreadsheet, possible_names, default_headers=None):
 st.sidebar.image("https://img.icons8.com/color/96/000000/dashboard-layout.png", width=60)
 st.sidebar.title("📌 เมนูหลัก")
 
-if sh:
+if sh is not None:
     st.sidebar.success("🟢 เชื่อมต่อ Google Sheet เรียบร้อย")
 else:
     st.sidebar.error("🔴 ยังไม่ได้เชื่อมต่อ Google Sheet")
