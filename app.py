@@ -30,20 +30,19 @@ except Exception as e:
     st.sidebar.error("🔴 พบข้อผิดพลาดในการเชื่อมต่อ")
     st.error(f"⚠️ รายละเอียดข้อผิดพลาด: {e}")
 
-# เมนูหลัก แบ่งตามหมวดหมู่และสิทธิ์การใช้งาน
+# เมนูหลัก
 menu = st.sidebar.radio(
     "📌 เมนูหลัก", 
     [
         "📊 Dashboard สรุปรายเดือน", 
         "🟢 ลงทะเบียนพนักงานใหม่", 
         "🟢 บันทึกงานประจำวัน (Admin)",
-        "🔴 [Owner Only] ตั้งค่าสาขา/แอดมิน (มูลตั้งค่า)",
-        "🔴 [Owner Only] ตั้งค่าราคาบริการ & ส่วนแบ่ง (ค่าบริการ)"
+        "👑 [Owner Only] จัดการตั้งค่า & ค่าบริการ"
     ]
 )
 
 # -------------------------------------------------------------
-# ฟังก์ชันดึงรายชื่อ Agency, สาขา และแอดมิน จากแท็บตั้งค่า
+# ฟังก์ชันดึงรายการจากแท็บตั้งค่า
 # -------------------------------------------------------------
 def get_setting_list(worksheet_name, col_name_keyword, default_list):
     if sh is not None:
@@ -155,7 +154,6 @@ elif menu == "🟢 ลงทะเบียนพนักงานใหม่"
             next_id_num = len(emp_data)
             auto_emp_id = f"EMP{next_id_num:03d}"
 
-            # ดึงข้อมูล Agency จากแท็บตั้งค่า
             agencies = get_setting_list("มูลตั้งค่า", "เอเจนซี่", ["Agency A", "Agency B", "อื่นๆ"])
 
             with st.form("emp_reg_form"):
@@ -216,8 +214,6 @@ elif menu == "🟢 ลงทะเบียนพนักงานใหม่"
             if len(emp_data) > 1:
                 df_emp = pd.DataFrame(emp_data[1:], columns=emp_data[0])
                 st.dataframe(df_emp, use_container_width=True)
-            else:
-                st.write("ยังไม่มีข้อมูลพนักงาน")
 
         except Exception as ex:
             st.error(f"เกิดข้อผิดพลาดในการโหลดข้อมูลพนักงาน: {ex}")
@@ -242,7 +238,6 @@ elif menu == "🟢 บันทึกงานประจำวัน (Admin)":
             if not emp_options:
                 emp_options = ["กรุณาลงทะเบียนพนักงานก่อน"]
 
-            # ดึงข้อมูล สาขา และ แอดมิน จากแท็บมูลตั้งค่า
             branches = get_setting_list("มูลตั้งค่า", "สาขา", ["ประจวบคีรีขันธ์", "ราชบุรี", "พิษณุโลก"])
             admins = get_setting_list("มูลตั้งค่า", "แอดมิน", ["Admin 1", "Admin 2"])
             services = get_setting_list("ค่าบริการ", "บริการ", ["40 นาที", "60 นาที", "90 นาที", "120 นาที", "8 hr (ทั้งคืน)"])
@@ -281,99 +276,145 @@ elif menu == "🟢 บันทึกงานประจำวัน (Admin)":
             st.error(f"เกิดข้อผิดพลาดในการบันทึกงาน: {ex}")
 
 # -------------------------------------------------------------
-# 4. หน้าตั้งค่าสาขา/แอดมิน/เอเจนซี่ (🔴 แท็บมูลตั้งค่า - Owner Only)
+# 4. หน้าสำหรับ OWNER (จัดการ 3 ฟอร์มหลัก)
 # -------------------------------------------------------------
-elif menu == "🔴 [Owner Only] ตั้งค่าสาขา/แอดมิน (มูลตั้งค่า)":
-    st.header("🔴 จัดการข้อมูลตั้งค่า (แท็บ: มูลตั้งค่า)")
-    st.info("👑 ส่วนนี้สำหรับ Owner ในการเพิ่ม/จัดการ สาขา, รายชื่อแอดมิน, และ รายชื่อ Agency")
+elif menu == "👑 [Owner Only] จัดการตั้งค่า & ค่าบริการ":
+    st.header("👑 [Owner Only] ระบบจัดการข้อมูลตั้งค่า & อัตราค่าบริการ")
 
-    if sh is not None:
-        try:
-            ws_set = sh.worksheet("มูลตั้งค่า")
-            set_data = ws_set.get_all_values()
+    tab_form1, tab_form2, tab_form3 = st.tabs([
+        "1️⃣ ลงทะเบียนสาขา & แอดมิน (คอลัมน์ A-F)", 
+        "2️⃣ ปรับเปลี่ยนราคาค่าบริการ (เขียนทับ)", 
+        "3️⃣ บันทึกรายการค่าใช้จ่าย (คอลัมน์ A-B)"
+    ])
 
-            tab_add, tab_view = st.tabs(["➕ เพิ่มข้อมูลตั้งค่าใหม่", "📋 ดูตารางมูลตั้งค่าทั้งหมด"])
+    # ---------------------------------------------------------
+    # ฟอร์มที่ 1: ลงทะเบียนสาขา + แอดมิน (แท็บ: มูลตั้งค่า คอลัมน์ A ถึง F)
+    # ---------------------------------------------------------
+    with tab_form1:
+        st.subheader("1️⃣ ฟอร์มลงทะเบียนสาขา & แอดมิน (บันทึกลงแท็บ 'มูลตั้งค่า' คอลัมน์ A-F)")
+        if sh is not None:
+            try:
+                ws_set = sh.worksheet("มูลตั้งค่า")
+                set_vals = ws_set.get_all_values()
 
-            with tab_add:
-                with st.form("add_setting_form"):
-                    col_s1, col_s2, col_s3 = st.columns(3)
-                    with col_s1:
-                        new_branch = st.text_input("🏢 เพิ่มสาขาใหม่")
-                    with col_s2:
-                        new_admin = st.text_input("👔 เพิ่มชื่อแอดมินใหม่")
-                    with col_s3:
-                        new_agency = st.text_input("🤝 เพิ่มชื่อ Agency ใหม่")
+                with st.form("form_owner_1"):
+                    col_a, col_b, col_c = st.columns(3)
+                    with col_a:
+                        val_branch = st.text_input("🏢 สาขา (Col A)")
+                        val_admin = st.text_input("👔 แอดมิน (Col B)")
+                    with col_b:
+                        val_agency = st.text_input("🤝 รายชื่อเอเจนซี่ (Col C)")
+                        val_workdays = st.text_input("📅 จำนวนวันทำงาน (Col D)")
+                    with col_c:
+                        val_sys_status = st.selectbox("⚙️ สถานะระบบ (Col E)", ["ใช้งานปกติ", "ปิดปรับปรุง", "ระงับ"])
+                        val_pay_status = st.selectbox("💳 สถานะจ่ายเอเจนซี่ (Col F)", ["จ่ายแล้ว", "รอจ่าย", "ค้างชำระ"])
 
-                    submit_set = st.form_submit_button("💾 บันทึกข้อมูลลงแท็บมูลตั้งค่า", use_container_width=True)
+                    submit_f1 = st.form_submit_button("💾 บันทึกข้อมูล คอลัมน์ A-F ลงแท็บมูลตั้งค่า", use_container_width=True)
 
-                    if submit_set:
-                        if not new_branch and not new_admin and not new_agency:
-                            st.warning("⚠️ กรุณากรอกข้อมูลอย่างน้อย 1 ช่องครับ")
-                        else:
-                            ws_set.append_row([new_branch or "-", new_admin or "-", new_agency or "-"])
-                            st.success("✅ เพิ่มข้อมูลเรียบร้อยแล้ว!")
-                            st.rerun()
+                    if submit_f1:
+                        new_row_f1 = [
+                            val_branch or "-",
+                            val_admin or "-",
+                            val_agency or "-",
+                            val_workdays or "-",
+                            val_sys_status,
+                            val_pay_status
+                        ]
+                        ws_set.append_row(new_row_f1)
+                        st.success("✅ บันทึกข้อมูลคอลัมน์ A-F เรียบร้อยแล้ว!")
+                        st.rerun()
 
-            with tab_view:
-                if len(set_data) > 0:
-                    df_set = pd.DataFrame(set_data[1:], columns=set_data[0]) if len(set_data) > 1 else pd.DataFrame(set_data)
+                st.markdown("---")
+                st.write("📋 **ตารางข้อมูลในแท็บ 'มูลตั้งค่า' ปัจจุบัน**")
+                if len(set_vals) > 0:
+                    df_set = pd.DataFrame(set_vals[1:], columns=set_vals[0]) if len(set_vals) > 1 else pd.DataFrame(set_vals)
                     st.dataframe(df_set, use_container_width=True)
-                else:
-                    st.write("ยังไม่มีข้อมูลตั้งค่า")
 
-        except Exception as ex:
-            st.error(f"เกิดข้อผิดพลาดในแท็บมูลตั้งค่า: {ex}")
+            except Exception as ex:
+                st.error(f"เกิดข้อผิดพลาดในฟอร์มที่ 1: {ex}")
 
-# -------------------------------------------------------------
-# 5. หน้าตั้งค่าอัตราค่าบริการ & ส่วนแบ่ง (🔴 แท็บค่าบริการ - Owner Only)
-# -------------------------------------------------------------
-elif menu == "🔴 [Owner Only] ตั้งค่าราคาบริการ & ส่วนแบ่ง (ค่าบริการ)":
-    st.header("🔴 จัดการอัตราค่าบริการ & ส่วนแบ่ง (แท็บ: ค่าบริการ)")
-    st.info("👑 สำหรับ Owner ปรับแต่งราคาบริการ ส่วนแบ่งร้าน, พนักงาน, Admin, และ เอเจนซี่")
+    # ---------------------------------------------------------
+    # ฟอร์มที่ 2: ปรับเปลี่ยนราคาค่าบริการ (เขียนทับชีท ค่าบริการ)
+    # ---------------------------------------------------------
+    with tab_form2:
+        st.subheader("2️⃣ ฟอร์มปรับแต่งราคาค่าบริการ (บันทึกเขียนทับชีท 'ค่าบริการ')")
+        if sh is not None:
+            try:
+                ws_svc = sh.worksheet("ค่าบริการ")
+                svc_vals = ws_svc.get_all_values()
 
-    if sh is not None:
-        try:
-            ws_service = sh.worksheet("ค่าบริการ")
-            service_data = ws_service.get_all_values()
+                if len(svc_vals) > 1:
+                    headers = svc_vals[0]
+                    df_svc = pd.DataFrame(svc_vals[1:], columns=headers)
+                    
+                    # ค้นหาคอลัมน์บริการ
+                    service_col = headers[0] # สมมติว่าคอลัมน์แรกคือชื่อบริการ
+                    service_names = df_svc[service_col].tolist()
 
-            tab_add_svc, tab_view_svc = st.tabs(["➕ เพิ่ม/ปรับราคาบริการ", "📋 ดูตารางค่าบริการทั้งหมด"])
+                    selected_svc = st.selectbox("⏱️ เลือกชื่อบริการที่ต้องการปรับเปลี่ยนราคา", service_names)
 
-            with tab_add_svc:
-                with st.form("add_service_form"):
-                    col_v1, col_v2 = st.columns(2)
-                    with col_v1:
-                        svc_name = st.text_input("⏱️ ชื่อรอบ / บริการ (เช่น 40 นาที, 60 นาที)")
-                        price_total = st.number_input("💰 ค่าบริการรวม (บาท)", min_value=0.0, step=100.0)
-                        price_emp = st.number_input("👤 ส่วนแบ่งพนักงาน (บาท)", min_value=0.0, step=50.0)
-                    with col_v2:
-                        price_shop = st.number_input("🏠 ส่วนแบ่งร้าน (บาท)", min_value=0.0, step=50.0)
-                        price_admin = st.number_input("👔 ส่วนแบ่ง Admin (บาท)", min_value=0.0, step=10.0)
-                        price_agency = st.number_input("🤝 ส่วนแบ่ง Agency (บาท)", min_value=0.0, step=50.0)
+                    # ดึงข้อมูลเดิมของบริการที่เลือกมาโชว์ให้อัตโนมัติ
+                    selected_row_idx = service_names.index(selected_svc) + 2 # +2 เพราะมี Header และ 1-based index ใน Sheets
+                    row_data = df_svc[df_svc[service_col] == selected_svc].iloc[0]
 
-                    submit_svc = st.form_submit_button("💾 บันทึกอัตราค่าบริการเข้า Google Sheet", use_container_width=True)
+                    with st.form("form_owner_2"):
+                        st.info(f"✏️ กำลังแก้ไขบริการ: **{selected_svc}** (แถวที่ {selected_row_idx})")
+                        col_p1, col_p2 = st.columns(2)
 
-                    if submit_svc:
-                        if not svc_name:
-                            st.error("⚠️ กรุณาระบุชื่อบริการก่อนบันทึกครับ")
-                        else:
-                            new_svc_row = [
-                                svc_name,
-                                str(price_total),
-                                str(price_emp),
-                                str(price_shop),
-                                str(price_admin),
-                                str(price_agency)
-                            ]
-                            ws_service.append_row(new_svc_row)
-                            st.success(f"✅ บันทึกอัตราค่าบริการ '{svc_name}' เรียบร้อยแล้ว!")
+                        with col_p1:
+                            new_price_total = st.text_input("💰 ราคาเงินบริการ / เงินรวม (บาท)", value=str(row_data.iloc[1]) if len(row_data) > 1 else "0")
+                            new_price_emp = st.text_input("👤 เงินพนักงาน (บาท)", value=str(row_data.iloc[2]) if len(row_data) > 2 else "0")
+
+                        with col_p2:
+                            new_price_shop = st.text_input("🏠 เงินร้าน (บาท)", value=str(row_data.iloc[3]) if len(row_data) > 3 else "0")
+                            new_price_agency = st.text_input("🤝 เงินเอเจนซี่ (บาท)", value=str(row_data.iloc[4]) if len(row_data) > 4 else "0")
+
+                        submit_f2 = st.form_submit_button("🔄 เขียนทับราคาใหม่ลง Google Sheet", use_container_width=True)
+
+                        if submit_f2:
+                            # เขียนทับเฉพาะช่วงคอลัมน์ราคาในแถวนั้นๆ
+                            ws_svc.update_cell(selected_row_idx, 2, new_price_total)
+                            ws_svc.update_cell(selected_row_idx, 3, new_price_emp)
+                            ws_svc.update_cell(selected_row_idx, 4, new_price_shop)
+                            ws_svc.update_cell(selected_row_idx, 5, new_price_agency)
+                            st.success(f"✅ ปรับปรุงราคาของ '{selected_svc}' เรียบร้อยแล้ว!")
                             st.rerun()
 
-            with tab_view_svc:
-                if len(service_data) > 0:
-                    df_svc = pd.DataFrame(service_data[1:], columns=service_data[0]) if len(service_data) > 1 else pd.DataFrame(service_data)
+                    st.markdown("---")
+                    st.write("📋 **ตารางอัตราค่าบริการทั้งหมด**")
                     st.dataframe(df_svc, use_container_width=True)
-                else:
-                    st.write("ยังไม่มีข้อมูลค่าบริการ")
 
-        except Exception as ex:
-            st.error(f"เกิดข้อผิดพลาดในแท็บค่าบริการ: {ex}")
+                else:
+                    st.warning("ไม่พบข้อมูลในแท็บ 'ค่าบริการ'")
+
+            except Exception as ex:
+                st.error(f"เกิดข้อผิดพลาดในฟอร์มที่ 2: {ex}")
+
+    # ---------------------------------------------------------
+    # ฟอร์มที่ 3: บันทึกค่าใช้จ่าย (แท็บ: มูลตั้งค่า คอลัมน์ A และ B)
+    # ---------------------------------------------------------
+    with tab_form3:
+        st.subheader("3️⃣ ฟอร์มบันทึกรายการค่าใช้จ่าย (ลงแท็บ 'มูลตั้งค่า' คอลัมน์ A และ B)")
+        if sh is not None:
+            try:
+                ws_set = sh.worksheet("มูลตั้งค่า")
+
+                with st.form("form_owner_3"):
+                    col_e1, col_e2 = st.columns(2)
+                    with col_e1:
+                        exp_item = st.text_input("📝 รายการค่าใช้จ่าย (Col A) *")
+                    with col_e2:
+                        exp_type = st.selectbox("🏷️ ประเภทค่าใช้จ่าย (Col B)", ["ค่าใช้จ่ายประจำ", "ค่าอุปกรณ์/ซ่อมบำรุง", "ค่าการตลาด/โปรโมท", "ค่าน้ำ/ค่าไฟ", "อื่นๆ"])
+
+                    submit_f3 = st.form_submit_button("💾 บันทึกค่าใช้จ่ายลงแท็บมูลตั้งค่า (Col A-B)", use_container_width=True)
+
+                    if submit_f3:
+                        if not exp_item:
+                            st.error("⚠️ กรุณาระบุรายการค่าใช้จ่ายก่อนบันทึกครับ")
+                        else:
+                            ws_set.append_row([exp_item, exp_type])
+                            st.success(f"✅ บันทึกรายการ '{exp_item}' ลงคอลัมน์ A-B เรียบร้อยแล้ว!")
+                            st.rerun()
+
+            except Exception as ex:
+                st.error(f"เกิดข้อผิดพลาดในฟอร์มที่ 3: {ex}")
