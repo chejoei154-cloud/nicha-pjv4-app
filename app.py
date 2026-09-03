@@ -2,6 +2,8 @@ import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
+import os
+from datetime import datetime
 
 # -------------------------------------------------------------
 # 1. ตั้งค่าหน้าตา Web App (Page Config)
@@ -13,33 +15,34 @@ st.set_page_config(
 )
 
 # -------------------------------------------------------------
-# 2. ฟังก์ชันเชื่อมต่อ Google Sheets & ดึง/สร้าง Worksheet
+# 2. ฟังก์ชันเชื่อมต่อ Google Sheets
 # -------------------------------------------------------------
 @st.cache_resource
 def init_connection():
     try:
-        # ดึง Credentials จาก Streamlit Secrets และแปลงรูปแบบ private_key ให้ถูกต้อง
-        creds_dict = dict(st.secrets["gcp_service_account"])
-        if "private_key" in creds_dict:
-            # แก้ไขเรื่อง \n และจัดฟอร์แมต private key ให้เป็นสเปกมาตรฐานของ PEM
-            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-
         scope = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
         
-        creds = Credentials.from_service_account_info(
-            creds_dict,
-            scopes=scope
-        )
+        json_file_path = "service_account.json"
+        
+        if os.path.exists(json_file_path):
+            creds = Credentials.from_service_account_file(json_file_path, scopes=scope)
+        elif "gcp_service_account" in st.secrets:
+            creds_dict = dict(st.secrets["gcp_service_account"])
+            if "private_key" in creds_dict:
+                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        else:
+            st.error("❌ ไม่พบข้อมูลยืนยันตัวตน Google Account")
+            return None
+
         client = gspread.authorize(creds)
         
-        # ดึงค่าเป้าหมายจาก Secrets
         target_sheet = st.secrets.get("spreadsheet_name", "Nicha_Pjv4_Database")
         target_sheet_str = str(target_sheet).strip()
         
-        # ตรวจสอบรูปแบบเพื่อเปิด Google Sheet ให้ถูกต้อง
         if target_sheet_str.startswith("http"):
             spreadsheet = client.open_by_url(target_sheet_str)
         else:
@@ -56,17 +59,14 @@ def init_connection():
 sh = init_connection()
 
 def get_or_create_worksheet(spreadsheet, possible_names, default_headers=None):
-    """ฟังก์ชันช่วยค้นหาแท็บ หรือสร้างแท็บใหม่ถ้ายังไม่มี"""
     existing_sheets = [ws.title for ws in spreadsheet.worksheets()]
     
-    # 1. ลองหาแท็บตามชื่อที่ต้องการ
     for name in possible_names:
         if name in existing_sheets:
             return spreadsheet.worksheet(name)
             
-    # 2. ถ้าหาไม่เจอ ให้สร้างแท็บใหม่ด้วยชื่อแรกในรายการ
     new_sheet_name = possible_names[0]
-    ws = spreadsheet.add_worksheet(title=new_sheet_name, rows="100", cols="20")
+    ws = spreadsheet.add_worksheet(title=new_sheet_name, rows="500", cols="20")
     if default_headers:
         ws.append_row(default_headers)
     return ws
@@ -96,40 +96,166 @@ menu = st.sidebar.radio(
 # 4. การจัดการแต่ละหน้าตามเมนู
 # -------------------------------------------------------------
 
-# --- หน้าที่ 1: Dashboard ---
+# =========================================================
+# หน้าที่ 1: Dashboard สรุปรายเดือน
+# =========================================================
 if menu == "📊 Dashboard สรุปรายเดือน":
     st.title("📊 Dashboard สรุปรายเดือน")
-    st.info("ระบบกำลังเตรียมความพร้อมสำหรับการแสดงผลรายงานสรุปประจำเดือน...")
+    
+    if sh is not None:
+        try:
+            ws_daily = get_or_create_worksheet(
+                sh, 
+                ["บันทึกงานประจำวัน", "งานประจำวัน"], 
+                ["วันที่", "แอดมิน", "พนักงาน", "บริการ", "ยอดเงิน", "หมายเหตุ"]
+            )
+            records = ws_daily.get_all_records()
+            
+            if records:
+                df = pd.DataFrame(records)
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("📝 รายการบันทึกทั้งหมด", f"{len(df)} รายการ")
+                with col2:
+                    if "ยอดเงิน" in df.columns:
+                        total_income = pd.to_numeric(df["ยอดเงิน"], errors='coerce').sum()
+                        st.metric("💰 ยอดเงินรวม", f"{total_income:,.2f} บาท")
+                    else:
+                        st.metric("💰 ยอดเงินรวม", "0.00 บาท")
+                with col3:
+                    st.metric("🟢 สถานะระบบ", "พร้อมใช้งาน")
+                
+                st.markdown("---")
+                st.subheader("📋 ตารางรายการบันทึกงานล่าสุด")
+                st.dataframe(df, use_container_width=True)
+            else:
+                st.info("💡 เชื่อมต่อ Google Sheet เรียบร้อยแล้ว แต่ยังไม่มีรายการบันทึกงานประจำวัน")
+        except Exception as e:
+            st.error(f"เกิดข้อผิดพลาดในการดึงข้อมูล Dashboard: {e}")
+    else:
+        st.error("🔴 ไม่สามารถดึงข้อมูลได้ เนื่องจากยังไม่ได้เชื่อมต่อ Google Sheet")
 
-# --- หน้าที่ 2: ลงทะเบียนพนักงาน ---
+# =========================================================
+# หน้าที่ 2: ลงทะเบียนพนักงานใหม่
+# =========================================================
 elif menu == "🟢 ลงทะเบียนพนักงานใหม่":
     st.title("🟢 ลงทะเบียนพนักงานใหม่")
-    st.info("แบบฟอร์มลงทะเบียนข้อมูลพนักงานใหม่เข้าสู่ระบบ...")
+    
+    if sh is not None:
+        try:
+            ws_emp = get_or_create_worksheet(
+                sh, 
+                ["ทะเบียนพนักงาน", "ข้อมูลพนักงาน"], 
+                ["วันที่ลงทะเบียน", "รหัสพนักงาน", "ชื่อ-นามสกุล", "ชื่อเล่น", "เบอร์โทรศัพท์", "สาขา", "สถานะ"]
+            )
+            
+            with st.form("form_register_employee"):
+                st.subheader("📝 กรอกข้อมูลพนักงานใหม่")
+                col_e1, col_e2 = st.columns(2)
+                
+                with col_e1:
+                    emp_id = st.text_input("🆔 รหัสพนักงาน *")
+                    emp_fullname = st.text_input("👤 ชื่อ-นามสกุล *")
+                    emp_nickname = st.text_input("💬 ชื่อเล่น")
+                    
+                with col_e2:
+                    emp_phone = st.text_input("📞 เบอร์โทรศัพท์")
+                    emp_branch = st.text_input("สาขา")
+                    emp_status = st.selectbox("📌 สถานะพนักงาน", ["ทำงานอยู่", "ลาหยุด", "พ้นสภาพ"])
+                    
+                submit_emp = st.form_submit_button("➕ บันทึกลงทะเบียนพนักงาน", use_container_width=True)
+                
+                if submit_emp:
+                    if not emp_id or not emp_fullname:
+                        st.error("⚠️ กรุณากรอกรหัสพนักงานและชื่อ-นามสกุลให้ครบถ้วน")
+                    else:
+                        reg_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        new_emp_data = [reg_date, emp_id, emp_fullname, emp_nickname, emp_phone, emp_branch, emp_status]
+                        ws_emp.append_row(new_emp_data)
+                        st.success(f"✅ บันทึกพนักงาน '{emp_fullname}' เรียบร้อยแล้ว!")
+                        st.rerun()
 
-# --- หน้าที่ 3: บันทึกงานประจำวัน ---
+            st.markdown("---")
+            st.subheader("📋 รายชื่อพนักงานทั้งหมด")
+            emp_vals = ws_emp.get_all_values()
+            if len(emp_vals) > 1:
+                df_emp = pd.DataFrame(emp_vals[1:], columns=emp_vals[0])
+                st.dataframe(df_emp, use_container_width=True)
+            else:
+                st.info("💡 ยังไม่มีข้อมูลพนักงานในระบบ")
+                
+        except Exception as e:
+            st.error(f"เกิดข้อผิดพลาดในการลงทะเบียนพนักงาน: {e}")
+
+# =========================================================
+# หน้าที่ 3: บันทึกงานประจำวัน (Admin)
+# =========================================================
 elif menu == "🟢 บันทึกงานประจำวัน (Admin)":
     st.title("🟢 บันทึกงานประจำวัน (Admin)")
-    st.info("แบบฟอร์มสำหรับแอดมินบันทึกการทำงานประจำวัน...")
+    
+    if sh is not None:
+        try:
+            ws_daily = get_or_create_worksheet(
+                sh, 
+                ["บันทึกงานประจำวัน", "งานประจำวัน"], 
+                ["วันที่-เวลา", "แอดมินผู้บันทึก", "ชื่อพนักงาน", "บริการ/รายการ", "ยอดเงิน", "หมายเหตุ"]
+            )
+            
+            with st.form("form_daily_work"):
+                st.subheader("📝 ฟอร์มบันทึกการทำงานประจำวัน")
+                col_d1, col_d2 = st.columns(2)
+                
+                with col_d1:
+                    admin_name = st.text_input("👤 ชื่อแอดมินผู้บันทึก *")
+                    emp_name = st.text_input("👤 ชื่อพนักงาน *")
+                    service_detail = st.text_input("⚙️ บริการ / รายการงาน *")
+                    
+                with col_d2:
+                    amount = st.number_input("💰 ยอดเงิน (บาท)", min_value=0.0, step=100.0)
+                    note = st.text_area("📝 หมายเหตุเพิ่มเติม")
+                    
+                submit_daily = st.form_submit_button("💾 บันทึกงานประจำวัน", use_container_width=True)
+                
+                if submit_daily:
+                    if not admin_name or not emp_name or not service_detail:
+                        st.error("⚠️ กรุณากรอกชื่อแอดมิน พนักงาน และรายการบริการให้ครบถ้วน")
+                    else:
+                        work_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        daily_data = [work_time, admin_name, emp_name, service_detail, amount, note]
+                        ws_daily.append_row(daily_data)
+                        st.success("✅ บันทึกงานประจำวันเรียบร้อยแล้ว!")
+                        st.rerun()
 
-# --- หน้าที่ 4: OWNER ONLY (ระบบจัดการหลัก 3 ฟอร์ม) ---
+            st.markdown("---")
+            st.subheader("📋 ประวัติการบันทึกงานประจำวัน")
+            daily_vals = ws_daily.get_all_values()
+            if len(daily_vals) > 1:
+                df_daily = pd.DataFrame(daily_vals[1:], columns=daily_vals[0])
+                st.dataframe(df_daily, use_container_width=True)
+            else:
+                st.info("💡 ยังไม่มีประวัติการบันทึกงานประจำวัน")
+                
+        except Exception as e:
+            st.error(f"เกิดข้อผิดพลาดในการบันทึกงานประจำวัน: {e}")
+
+# =========================================================
+# หน้าที่ 4: [Owner Only] จัดการตั้งค่า & ค่าบริการ
+# =========================================================
 elif menu == "👑 [Owner Only] จัดการตั้งค่า & ค่าบริการ":
     st.title("👑 [Owner Only] ระบบจัดการข้อมูลตั้งค่า & อัตราค่าบริการ")
 
-    # แท็บแบ่ง 3 ฟอร์มหลัก
     tab_form1, tab_form2, tab_form3 = st.tabs([
         "1️⃣ ข้อมูลเบื้องต้น",
         "2️⃣ ปรับเปลี่ยนราคาค่าบริการ",
         "3️⃣ บันทึกรายการค่าใช้จ่าย"
     ])
 
-    # =========================================================
-    # ฟอร์มที่ 1: ข้อมูลเบื้องต้น
-    # =========================================================
+    # --- ฟอร์มที่ 1: ข้อมูลเบื้องต้น ---
     with tab_form1:
         st.subheader("1️⃣ ฟอร์มข้อมูลเบื้องต้น")
         if sh is not None:
             try:
-                # กำหนดชื่อหัวข้อ คอลัมน์ A ถึง F
                 fixed_headers = [
                     "สาขา",
                     "ชื่อแอดมิน",
@@ -139,13 +265,9 @@ elif menu == "👑 [Owner Only] จัดการตั้งค่า & ค่
                     "ชื่อ agency"
                 ]
 
-                # ดึง/สร้างแท็บ "ข้อมูลเบื้องต้น"
                 ws_info = get_or_create_worksheet(sh, ["ข้อมูลเบื้องต้น"], fixed_headers)
-                
-                # ดึงข้อมูลทั้งหมดในแท็บ
                 all_vals = ws_info.get_all_values()
 
-                # กรณีชีทว่าง ให้ใส่ แถวที่ 1 เป็น Header ทันที
                 if len(all_vals) == 0:
                     ws_info.append_row(fixed_headers)
                     all_vals = [fixed_headers]
@@ -158,10 +280,8 @@ elif menu == "👑 [Owner Only] จัดการตั้งค่า & ค่
                 row_to_edit = None
                 default_a, default_b, default_c, default_d, default_e, default_f = "", "", "", "", "", ""
 
-                # ข้อมูลรายการตั้งแต่แถวที่ 2 เป็นต้นไป
                 data_rows = all_vals[1:] if len(all_vals) > 1 else []
 
-                # หากเลือกโหมดแก้ไขข้อมูล ให้เลือกแถวที่ต้องการแก้ไข
                 if mode == "✏️ แก้ไข/ปรับปรุงข้อมูลเดิม" and len(data_rows) > 0:
                     row_options = [f"แถวที่ {idx+2}: {row[0] if len(row)>0 else ''} - {row[1] if len(row)>1 else ''}" for idx, row in enumerate(data_rows)]
                     selected_option = st.selectbox("🎯 เลือกแถวที่ต้องการแก้ไขข้อมูล:", row_options)
@@ -205,25 +325,22 @@ elif menu == "👑 [Owner Only] จัดการตั้งค่า & ค่
                         st.rerun()
 
                 st.markdown("---")
-                st.subheader(f"📋 ตารางข้อมูลเบื้องต้นทั้งหมด (แท็บ: {ws_info.title} - แสดง คอลัมน์ A ถึง F)")
+                st.subheader(f"📋 ตารางข้อมูลเบื้องต้นทั้งหมด (แท็บ: {ws_info.title})")
                 
-                # แสดงผลตารางเฉพาะคอลัมน์ A ถึง F
                 if len(data_rows) > 0:
                     df_display = pd.DataFrame(data_rows)
-                    df_display = df_display.iloc[:, :6] # ดึงเฉพาะ 6 คอลัมน์แรก
+                    df_display = df_display.iloc[:, :6]
                     df_display.columns = fixed_headers[:df_display.shape[1]]
                     st.dataframe(df_display, use_container_width=True)
                 else:
-                    st.info("💡 ยังไม่มีข้อมูลในแท็บ 'ข้อมูลเบื้องต้น' (กรอกข้อมูลด้านบนแล้วกดบันทึกเพื่อเพิ่มข้อมูลลงตาราง)")
+                    st.info("💡 ยังไม่มีข้อมูลในแท็บ 'ข้อมูลเบื้องต้น'")
 
             except Exception as ex:
                 st.error(f"เกิดข้อผิดพลาดในฟอร์มข้อมูลเบื้องต้น: {ex}")
 
-    # =========================================================
-    # ฟอร์มที่ 2: ปรับเปลี่ยนราคาค่าบริการ
-    # =========================================================
+    # --- ฟอร์มที่ 2: ปรับเปลี่ยนราคาค่าบริการ ---
     with tab_form2:
-        st.subheader("2️⃣ ฟอร์มปรับแต่งราคาค่าบริการ (บันทึกเขียนทับชีท 'ค่าบริการ')")
+        st.subheader("2️⃣ ฟอร์มปรับแต่งราคาค่าบริการ")
         if sh is not None:
             try:
                 ws_svc = get_or_create_worksheet(
@@ -277,11 +394,9 @@ elif menu == "👑 [Owner Only] จัดการตั้งค่า & ค่
             except Exception as ex:
                 st.error(f"เกิดข้อผิดพลาดในฟอร์มที่ 2: {ex}")
 
-    # =========================================================
-    # ฟอร์มที่ 3: บันทึกรายการค่าใช้จ่าย
-    # =========================================================
+    # --- ฟอร์มที่ 3: บันทึกรายการค่าใช้จ่าย ---
     with tab_form3:
-        st.subheader("3️⃣ ฟอร์มบันทึกรายการค่าใช้จ่าย (แท็บ 'ข้อมูลตั้งค่า' คอลัมน์ A และ B)")
+        st.subheader("3️⃣ ฟอร์มบันทึกรายการค่าใช้จ่าย")
         if sh is not None:
             try:
                 ws_set = get_or_create_worksheet(sh, ["ข้อมูลตั้งค่า", "มูลตั้งค่า"], ["รายการค่าใช้จ่าย", "ประเภทค่าใช้จ่าย"])
@@ -289,18 +404,18 @@ elif menu == "👑 [Owner Only] จัดการตั้งค่า & ค่
                 with st.form("form_owner_3"):
                     col_e1, col_e2 = st.columns(2)
                     with col_e1:
-                        exp_item = st.text_input("📝 รายการค่าใช้จ่าย (Col A) *")
+                        exp_item = st.text_input("📝 รายการค่าใช้จ่าย *")
                     with col_e2:
-                        exp_type = st.selectbox("🏷️ ประเภทค่าใช้จ่าย (Col B)", ["ค่าใช้จ่ายประจำ", "ค่าอุปกรณ์/ซ่อมบำรุง", "ค่าการตลาด/โปรโมท", "ค่าน้ำ/ค่าไฟ", "อื่นๆ"])
+                        exp_type = st.selectbox("🏷️ ประเภทค่าใช้จ่าย", ["ค่าใช้จ่ายประจำ", "ค่าอุปกรณ์/ซ่อมบำรุง", "ค่าการตลาด/โปรโมท", "ค่าน้ำ/ค่าไฟ", "อื่นๆ"])
 
-                    submit_f3 = st.form_submit_button("💾 บันทึกค่าใช้จ่ายลง Google Sheet (Col A-B)", use_container_width=True)
+                    submit_f3 = st.form_submit_button("💾 บันทึกค่าใช้จ่ายลง Google Sheet", use_container_width=True)
 
                     if submit_f3:
                         if not exp_item:
                             st.error("⚠️ กรุณาระบุรายการค่าใช้จ่ายก่อนบันทึกครับ")
                         else:
                             ws_set.append_row([exp_item, exp_type])
-                            st.success(f"✅ บันทึกรายการ '{exp_item}' ลงคอลัมน์ A-B ในแท็บ '{ws_set.title}' เรียบร้อยแล้ว!")
+                            st.success(f"✅ บันทึกรายการ '{exp_item}' เรียบร้อยแล้ว!")
                             st.rerun()
 
                 st.markdown("---")
