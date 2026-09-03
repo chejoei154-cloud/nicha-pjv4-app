@@ -281,53 +281,74 @@ elif menu == "👑 [Owner Only] จัดการตั้งค่า & ค่
         "2️⃣ ปรับเปลี่ยนราคาค่าบริการ (เขียนทับ)", 
         "3️⃣ บันทึกรายการค่าใช้จ่าย (คอลัมน์ A-B)"
     ])
-
     # ---------------------------------------------------------
-    # ฟอร์มที่ 1: ลงทะเบียนสาขา + แอดมิน (ดึง/ลงข้อมูลแท็บ "สาขาบวกแอดมิน")
+    # ฟอร์มที่ 1: ข้อมูลเบื้องต้น (แก้ไขข้อมูล Row 1 / แสดงตาราง Col A-F)
     # ---------------------------------------------------------
     with tab_form1:
-        st.subheader("1️⃣ ฟอร์มลงทะเบียนสาขา & แอดมิน (บันทึกลงแท็บ 'สาขาบวกแอดมิน')")
+        st.subheader("1️⃣ ข้อมูลเบื้องต้น")
         if sh is not None:
             try:
-                # แก้ไขชื่อแท็บเป้าหมายเป็น "สาขาบวกแอดมิน"
-                ws_branch = get_or_create_worksheet(
-                    ["สาขาบวกแอดมิน", "สาขา+แอดมิน", "สาขา แอดมิน"], 
-                    ["สาขา", "แอดมิน", "รายชื่อเอเจนซี่", "จำนวนวันทำงาน", "สถานะระบบ", "สถานะจ่าย"]
+                # เชื่อมต่อแท็บ "ข้อมูลเบื้องต้น"
+                ws_info = get_or_create_worksheet(
+                    ["ข้อมูลเบื้องต้น"], 
+                    ["คอลัมน์ A", "คอลัมน์ B", "คอลัมน์ C", "คอลัมน์ D", "คอลัมน์ E", "คอลัมน์ F"]
                 )
-                branch_vals = ws_branch.get_all_values()
+                
+                # ดึงข้อมูลทั้งหมดในชีท
+                all_vals = ws_info.get_all_values()
+                
+                # ดึงข้อมูลแถวที่ 1 (Row 1) สำหรับ Col A-F มาตั้งเป็นค่าเริ่มต้นในฟอร์ม
+                row1_data = all_vals[0] if len(all_vals) > 0 else []
+                def get_row1_val(col_idx):
+                    return str(row1_data[col_idx]).strip() if len(row1_data) > col_idx else ""
+
+                val_a_init = get_row1_val(0)
+                val_b_init = get_row1_val(1)
+                val_c_init = get_row1_val(2)
+                val_d_init = get_row1_val(3)
+                val_e_init = get_row1_val(4)
+                val_f_init = get_row1_val(5)
 
                 with st.form("form_owner_1"):
-                    col_a, col_b, col_c = st.columns(3)
-                    with col_a:
-                        val_branch = st.text_input("🏢 สาขา (Col A)")
-                        val_admin = st.text_input("👔 แอดมิน (Col B)")
-                    with col_b:
-                        val_agency = st.text_input("🤝 รายชื่อเอเจนซี่ (Col C)")
-                        val_workdays = st.text_input("📅 จำนวนวันทำงาน (Col D)")
-                    with col_c:
-                        val_sys_status = st.selectbox("⚙️ สถานะระบบ (Col E)", ["ใช้งานปกติ", "ปิดปรับปรุง", "ระงับ"])
-                        val_pay_status = st.selectbox("💳 สถานะจ่ายเอเจนซี่ (Col F)", ["จ่ายแล้ว", "รอจ่าย", "ค้างชำระ"])
+                    st.write("📝 **กรอก/แก้ไขข้อมูลเบื้องต้น (แถวที่ 1 คอลัมน์ A - F)**")
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        val_a = st.text_input("คอลัมน์ A", value=val_a_init)
+                        val_b = st.text_input("คอลัมน์ B", value=val_b_init)
+                    with col2:
+                        val_c = st.text_input("คอลัมน์ C", value=val_c_init)
+                        val_d = st.text_input("คอลัมน์ D", value=val_d_init)
+                    with col3:
+                        val_e = st.text_input("คอลัมน์ E", value=val_e_init)
+                        val_f = st.text_input("คอลัมน์ F", value=val_f_init)
 
-                    submit_f1 = st.form_submit_button("💾 บันทึกข้อมูลลงแท็บ 'สาขาบวกแอดมิน'", use_container_width=True)
+                    submit_f1 = st.form_submit_button("💾 บันทึกข้อมูลเบื้องต้น (เขียนทับแถวที่ 1)", use_container_width=True)
 
                     if submit_f1:
-                        new_row_f1 = [
-                            val_branch or "-", val_admin or "-", val_agency or "-",
-                            val_workdays or "-", val_sys_status, val_pay_status
-                        ]
-                        ws_branch.append_row(new_row_f1)
-                        st.success(f"✅ บันทึกข้อมูลลงแท็บ '{ws_branch.title}' เรียบร้อยแล้ว!")
+                        # อัปเดตข้อมูลเขียนทับช่วง A1:F1
+                        ws_info.update("A1:F1", [[val_a, val_b, val_c, val_d, val_e, val_f]])
+                        st.success("✅ บันทึกข้อมูลเบื้องต้นลงแถวที่ 1 (คอลัมน์ A-F) เรียบร้อยแล้ว!")
                         st.rerun()
 
                 st.markdown("---")
-                st.write(f"📋 **ตารางข้อมูลสาขา & แอดมินปัจจุบัน (แท็บ: {ws_branch.title})**")
-                if len(branch_vals) > 0:
-                    df_branch = pd.DataFrame(branch_vals[1:], columns=branch_vals[0]) if len(branch_vals) > 1 else pd.DataFrame(branch_vals)
-                    st.dataframe(df_branch, use_container_width=True)
+                st.subheader(f"📋 ตารางข้อมูลทั้งหมด (แท็บ: {ws_info.title} - คอลัมน์ A ถึง F เท่านั้น)")
+                
+                if len(all_vals) > 0:
+                    # แปลงข้อมูลให้อยู่ในรูปแบบ DataFrame และตัดเอาเฉพาะคอลัมน์ A ถึง F (index 0 ถึง 5)
+                    df_all = pd.DataFrame(all_vals)
+                    df_a_f = df_all.iloc[:, :6] # กรองเฉพาะ 6 คอลัมน์แรก (A-F)
+                    
+                    # กำหนดชื่อคอลัมน์ A-F เพื่อความสวยงาม
+                    col_names = ["คอลัมน์ A", "คอลัมน์ B", "คอลัมน์ C", "คอลัมน์ D", "คอลัมน์ E", "คอลัมน์ F"]
+                    df_a_f.columns = col_names[:df_a_f.shape[1]]
+                    
+                    st.dataframe(df_a_f, use_container_width=True)
+                else:
+                    st.info("ยังไม่มีข้อมูลในแท็บ 'ข้อมูลเบื้องต้น'")
 
             except Exception as ex:
-                st.error(f"เกิดข้อผิดพลาดในฟอร์มที่ 1: {ex}")
-
+                st.error(f"เกิดข้อผิดพลาดในฟอร์มข้อมูลเบื้องต้น: {ex}")
     # ---------------------------------------------------------
     # ฟอร์มที่ 2: ปรับเปลี่ยนราคาค่าบริการ (เขียนทับชีท ค่าบริการ)
     # ---------------------------------------------------------
